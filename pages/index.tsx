@@ -4,7 +4,6 @@ import { AlertTriangle, Plus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import useSWR from 'swr';
 
 import { AddTorrentDialog } from '@/components/add-torrent-dialog';
 import { EditTorrentDialog } from '@/components/edit-torrent-dialog';
@@ -26,7 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { deleteTorrent, getTorrent, getTorrents } from '@/lib/api/torrents';
 import { getApiBaseUrl } from '@/lib/api-client';
-import type { Torrent } from '@/lib/types/api';
+import type { Torrent, TorrentsResponse } from '@/lib/types/api';
 
 const TorrentPlayerDialog = dynamic(
   () => import('@/components/torrent-player-dialog').then((mod) => mod.TorrentPlayerDialog),
@@ -51,17 +50,39 @@ export default function HomePage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
-  const {
-    data: torrentsData,
-    error,
-    mutate,
-    isLoading,
-  } = useSWR('torrents', () => getTorrents({}), {
-    refreshInterval: isPaused ? 0 : 5000,
-    revalidateOnFocus: false,
-    shouldRetryOnError: true,
-    errorRetryCount: 3,
-  });
+  // Manual data fetching state
+  const [torrentsData, setTorrentsData] = useState<TorrentsResponse | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchData = async (isInitialLoad = false) => {
+    if (isInitialLoad) {
+      setIsLoading(true);
+    }
+    try {
+      const data = await getTorrents({});
+      setTorrentsData(data);
+      setError(null);
+    } catch (err) {
+      const fetchError = err instanceof Error ? err : new Error('Failed to fetch torrents');
+      setError(fetchError);
+      toast.error(fetchError.message);
+    } finally {
+      if (isInitialLoad) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchData(true);
+    const interval = setInterval(() => {
+      if (!isPaused) {
+        fetchData(false);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isPaused]);
 
   const categories = useMemo(() => {
     if (!torrentsData?.torrents) return [];
@@ -90,9 +111,9 @@ export default function HomePage() {
   };
 
   const closeDeleteDialog = () => {
-    if (isDeleting) return; // Prevent closing while deleting
+    if (isDeleting) return;
     setDeleteDialogOpen(false);
-    setTimeout(() => setTorrentToDelete(null), 200); // Clear after animation
+    setTimeout(() => setTorrentToDelete(null), 200);
   };
 
   const handleDelete = async () => {
@@ -104,7 +125,7 @@ export default function HomePage() {
       toast.success('Torrent deleted', {
         description: `Successfully deleted ${torrentToDelete.title || torrentToDelete.infohash}`,
       });
-      mutate();
+      fetchData();
       closeDeleteDialog();
     } catch (error) {
       toast.error('Delete failed', {
@@ -186,7 +207,7 @@ export default function HomePage() {
       <main className='container mx-auto px-4 py-8'>
         <div className='flex flex-wrap items-center justify-between gap-4 mb-6'>
           <div className='flex flex-wrap items-center gap-4'>
-            <AddTorrentDialog onSuccess={() => mutate()} />
+            <AddTorrentDialog onSuccess={fetchData} />
 
             <div className='flex items-center gap-2'>
               <Label htmlFor='category-select' className='text-sm text-muted-foreground shrink-0'>
@@ -274,7 +295,7 @@ export default function HomePage() {
                   : 'Get started by adding your first torrent using a magnet link, info hash or torrent file.'}
               </p>
             </div>
-            <AddTorrentDialog onSuccess={() => mutate()} />
+            <AddTorrentDialog onSuccess={fetchData} />
           </div>
         ) : (
           !error &&
@@ -315,7 +336,7 @@ export default function HomePage() {
         torrent={selectedTorrent}
         open={!!selectedTorrent}
         onOpenChange={(open) => !open && setSelectedTorrent(null)}
-        onSuccess={() => mutate()}
+        onSuccess={fetchData}
       />
       <TorrentStatsDialog
         torrent={statsTorrent}

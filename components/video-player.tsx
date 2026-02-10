@@ -4,7 +4,7 @@
 import '@vidstack/react/player/styles/base.css';
 
 import { Capacitor } from '@capacitor/core';
-import { ActivityAction, IntentLauncher, IntentLauncherParams } from '@capgo/capacitor-intent-launcher';
+import { ActivityAction, IntentLauncher, type IntentLauncherParams } from '@capgo/capacitor-intent-launcher';
 import {
   Controls,
   MediaPlayer,
@@ -22,68 +22,188 @@ import {
   SeekBackward10Icon,
   SeekForward10Icon
 } from '@vidstack/react/icons';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef,useState } from 'react';
 
 interface VideoPlayerProps {
   options: {
-    src: VideoSrc
-    title?: string
-    autoPlay?: boolean
+    src: VideoSrc;
+    title?: string;
+    autoPlay?: boolean;
   };
   onExit?: () => void;
+}
+
+type WebOSEnvironment = 'pending' | 'packaged' | 'browser' | 'none';
+
+// Base WebOS response
+interface WebOSResponse {
+  returnValue: boolean;
+  [key: string]: unknown;
+}
+
+// Types for the com.webos.app.mediadiscovery launch method
+interface DLNAInfo {
+  flagVal: number;
+  cleartextSize: string;
+  contentLength: string;
+  opVal: number;
+  protocolInfo: string;
+  duration: number;
+}
+
+interface MediaPayload {
+  fullPath: string;
+  artist: string;
+  subtitle: string;
+  dlnaInfo: DLNAInfo;
+  mediaType: 'VIDEO' | 'AUDIO';
+  thumbnail: string;
+  deviceType: 'DMR';
+  album: string;
+  fileName: string;
+  lastPlayPosition: number;
+}
+
+interface AppManagerLaunchParams {
+  id: string;
+  params: {
+    payload: MediaPayload[];
+  };
+}
+
+interface WebOSAppManagerRequestParams {
+  method: 'launch';
+  parameters: AppManagerLaunchParams;
+  onSuccess: () => void;
+  onFailure: (res: WebOSResponse) => void;
+}
+
+interface WebOS {
+  service: {
+    request: (uri: string, params: WebOSAppManagerRequestParams) => void;
+  };
+}
+
+declare global {
+  interface Window {
+    webOS: WebOS;
+  }
 }
 
 const IS_NATIVE = Capacitor.isNativePlatform();
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ options, onExit }) => {
+  const { src, autoPlay, title } = options;
   const player = useRef<MediaPlayerInstance>(null);
   const intentLaunched = useRef(false);
+  const [webOSEnvironment, setWebOSEnvironment] = useState<WebOSEnvironment>('pending');
 
   useEffect(() => {
-    const openInExternalPlayer = () => {
-      if (IS_NATIVE && options?.src && options.autoPlay && !intentLaunched.current) {
-        intentLaunched.current = true;
+    const userAgentContainsWebOS = typeof window !== 'undefined' && window.navigator.userAgent.includes('Web0S');
+    if (userAgentContainsWebOS) {
+      if (window.webOS && window.webOS.service && typeof window.webOS.service.request === 'function') {
+        setWebOSEnvironment('packaged');
+      } else {
+        setWebOSEnvironment('browser');
+      }
+    } else {
+      setWebOSEnvironment('none');
+    }
+  }, []);
 
-        let url: string | undefined;
-        if (typeof options.src === 'string') {
-          url = options.src;
-        } else if ('src' in options.src && typeof options.src.src === 'string') {
-          url = options.src.src;
+  useEffect(() => {
+    if (autoPlay && !IS_NATIVE) {
+      player.current?.enterFullscreen();
+    }
+  }, [autoPlay]);
+
+  const playOnWebOSPackaged = useCallback((url: string, mediaTitle?: string, mimeType?: string) => {
+    const payload: MediaPayload = {
+      fullPath: url,
+      fileName: mediaTitle || ' ',
+      mediaType: 'VIDEO',
+      dlnaInfo: {
+        flagVal: 4096,
+        cleartextSize: '-1',
+        contentLength: '-1',
+        opVal: 1,
+        protocolInfo: `http-get:*:${mimeType || 'video/mp4'}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000`,
+        duration: 0
+      },
+      artist: '',
+      subtitle: '',
+      thumbnail: '',
+      deviceType: 'DMR',
+      album: '',
+      lastPlayPosition: -1
+    };
+
+    const params: WebOSAppManagerRequestParams = {
+      method: 'launch',
+      parameters: {
+        id: 'com.webos.app.mediadiscovery',
+        params: {
+          payload: [payload]
         }
-
-        if (!url) {
-          console.error('Video source is not a valid URL for an external player.');
-          if (onExit) onExit();
-          return;
-        }
-
-        try {
-          const intentPayload: IntentLauncherParams = {
-            action: ActivityAction.VIEW,
-            data: url,
-            type: 'video/*',
-          };
-
-          if (options.title) {
-            intentPayload.extra = {
-              'android.intent.extra.TITLE': options.title,
-              'title': options.title,
-            };
-          }
-
-          IntentLauncher.startActivityAsync(intentPayload);
-          if (onExit) {
-            setTimeout(onExit, 100);
-          }
-        } catch (error) {
-          console.error('Failed to open URL with IntentLauncher', error);
-          if (onExit) onExit();
-        }
+      },
+      onSuccess: () => {
+        console.log('Media Discovery app launched successfully on WebOS');
+        if (onExit) onExit();
+      },
+      onFailure: (res: WebOSResponse) => {
+        console.error('Failed to launch Media Discovery app on WebOS', res);
+        if (onExit) onExit();
       }
     };
 
-    openInExternalPlayer();
-  }, [options, onExit]);
+    window.webOS.service.request('luna://com.webos.applicationManager', params);
+  }, [onExit]);
+
+  useEffect(() => {
+    if (webOSEnvironment === 'pending' || !src || !autoPlay || intentLaunched.current) return;
+
+    let url: string | undefined;
+    let mimeType: string | undefined;
+
+    if (typeof src === 'string') {
+      url = src;
+    } else if (src && 'src' in src && typeof src.src === 'string') {
+      url = src.src;
+      if (typeof src.type === 'string') {
+        mimeType = src.type;
+      }
+    }
+
+    if (!url) {
+      if (onExit) onExit();
+      return;
+    }
+
+    intentLaunched.current = true;
+
+    if (webOSEnvironment === 'packaged') {
+      playOnWebOSPackaged(url, title, mimeType);
+    } else if (webOSEnvironment === 'browser') {
+      window.location.href = url;
+      if (onExit) setTimeout(onExit, 100);
+    } else if (IS_NATIVE) {
+      try {
+        const intentPayload: IntentLauncherParams = {
+          action: ActivityAction.VIEW,
+          data: url,
+          type: mimeType || 'video/*',
+        };
+        if (title) {
+          intentPayload.extra = { 'android.intent.extra.TITLE': title, title: title };
+        }
+        IntentLauncher.startActivityAsync(intentPayload);
+        if (onExit) setTimeout(onExit, 100);
+      } catch (error) {
+        console.error('Failed to open URL with IntentLauncher', error);
+        if (onExit) onExit();
+      }
+    }
+  }, [src, autoPlay, title, onExit, webOSEnvironment, playOnWebOSPackaged]);
 
   const BufferingIndicator = () => {
     return (
@@ -99,19 +219,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ options, onExit }) => {
     );
   };
 
-  useEffect(() => {
-    if (options.autoPlay && !IS_NATIVE) {
-      player.current?.enterFullscreen();
-    }
-  }, [options.autoPlay]);
-
   const seek = (seconds: number) => {
       if (player.current) {
           player.current.currentTime += seconds;
       }
   };
 
-  if (IS_NATIVE) {
+  if (IS_NATIVE || webOSEnvironment === 'packaged' || webOSEnvironment === 'browser') {
     return null;
   }
 
@@ -119,9 +233,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ options, onExit }) => {
     <MediaPlayer
       ref={player}
       className='group bg-black text-white font-sans rounded-lg'
-      title={options.title}
-      src={options.src}
-      autoPlay={options.autoPlay}
+      title={title}
+      src={src}
+      autoPlay={autoPlay}
       onFullscreenChange={(isFullscreen) => {
         if (!isFullscreen && onExit) {
           onExit();

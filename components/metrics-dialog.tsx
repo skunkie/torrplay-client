@@ -2,12 +2,13 @@
 
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Activity, Database, HardDrive, Loader2 } from 'lucide-react';
-import useSWR from 'swr';
+import { useEffect, useState } from 'react';
 
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getMemoryStats } from '@/lib/api/stats';
 import { formatBytes } from '@/lib/format-utils';
+import { MemoryStats } from '@/lib/types/api';
 
 interface MetricsDialogProps {
   open: boolean
@@ -15,9 +16,36 @@ interface MetricsDialogProps {
 }
 
 export function MetricsDialog({ open, onOpenChange }: MetricsDialogProps) {
-  const { data: memoryStats } = useSWR(open ? '/api/stats/memory' : null, () => getMemoryStats(), {
-    refreshInterval: 1000,
-  });
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setMemoryStats(null);
+      return;
+    }
+
+    let active = true;
+
+    const fetchData = () => {
+      getMemoryStats()
+        .then((stats) => {
+          if (active) {
+            setMemoryStats(stats);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to fetch memory stats', err);
+        });
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 1000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [open]);
 
   if (!open) return null;
 

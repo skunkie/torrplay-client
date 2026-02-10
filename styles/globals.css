@@ -48,12 +48,24 @@
     --ring: 221.2 83.2% 53.3%;
   }
 
-  * {
-    @apply border-border;
+  /* Establish a full-height layout and a reliable scrolling container */
+  html,
+  body,
+  body > div:first-child,
+  div#__next {
+    @apply h-full;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-y-hidden; /* Prevent body scroll */
+  }
+
+  div#__next {
+    @apply overflow-y-auto; /* Enable scrolling on the main app container */
+  }
+
+  * {
+    @apply border-border;
   }
 
   html {

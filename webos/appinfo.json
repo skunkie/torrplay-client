@@ -1,0 +1,10 @@
+{
+  "id": "com.github.skunkie.torrplayclient",
+  "version": "1.0.0",
+  "vendor": "TorrPlay",
+  "type": "web",
+  "main": "index.html",
+  "title": "TorrPlay",
+  "icon": "icon-128x128.png",
+  "largeIcon": "icon-512x512.png"
+}

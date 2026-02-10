@@ -1,9 +1,8 @@
 'use client';
 
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import useSWR from 'swr';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +20,7 @@ import { Switch } from '@/components/ui/switch';
 import { getSettings, updateSettings } from '@/lib/api/settings';
 import { API_BASE_URL } from '@/lib/constants';
 import { formatBytes } from '@/lib/format-utils';
+import { Settings } from '@/lib/types/api';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -28,9 +28,9 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { data: settings, error, mutate } = useSWR(open ? '/api/v1/settings' : null, getSettings, {
-    shouldRetryOnError: false, // Prevent retrying if the backend is down
-  });
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
 
   const [dlnaEnabled, setDlnaEnabled] = useState(false);
   const [friendlyName, setFriendlyName] = useState('');
@@ -39,37 +39,52 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [initialApiUrl, setInitialApiUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const isLoadingSettings = open && !settings && !error;
+  const fetchSettings = useCallback(async () => {
+    setIsLoadingSettings(true);
+    setError(null);
+    try {
+      const data = await getSettings();
+      setSettings(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An unknown error occurred'));
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (open) {
       const storedApiUrl = localStorage.getItem('NEXT_PUBLIC_API_URL') || API_BASE_URL;
       setApiUrl(storedApiUrl);
       setInitialApiUrl(storedApiUrl);
+      fetchSettings();
+    } else {
+      setSettings(null);
+      setError(null);
     }
+  }, [open, fetchSettings]);
 
+  useEffect(() => {
     if (settings) {
       setDlnaEnabled(settings.enableDlna ?? false);
       setFriendlyName(settings.friendlyName || 'TorrPlay DLNA');
       setMaxMemory(settings.maxMemory / (1024 * 1024)); // Convert bytes to MB
     }
-  }, [settings, open]);
+  }, [settings]);
 
   const handleSave = async () => {
     setSaving(true);
 
-    // If the API URL has changed, ONLY update that and reload.
     if (apiUrl !== initialApiUrl) {
       localStorage.setItem('NEXT_PUBLIC_API_URL', apiUrl);
       toast.info('API URL updated', {
         description: 'The page will now reload to apply the new URL.',
         duration: 2500,
       });
-      setTimeout(() => window.location.reload(), 2500); 
-      return; // IMPORTANT: Exit here to prevent trying to save other settings
+      setTimeout(() => window.location.reload(), 2500);
+      return;
     }
 
-    // If API URL is unchanged, proceed with saving other settings.
     if (!settings) {
       toast.error('Cannot save settings', {
         description: 'The backend is offline. Please verify your API URL.',
@@ -82,14 +97,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       await updateSettings({
         enableDlna: dlnaEnabled,
         friendlyName: friendlyName,
-        maxMemory: maxMemory * 1024 * 1024, // Convert MB to bytes
+        maxMemory: maxMemory * 1024 * 1024,
       });
 
       toast.success('Settings saved', {
         description: 'Your server settings have been updated successfully',
       });
 
-      mutate();
+      await fetchSettings();
       onOpenChange(false);
     } catch (error) {
       toast.error('Error saving settings', {
@@ -118,7 +133,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogHeader>
 
         <div className='grid gap-y-6 py-4 max-h-[60vh] overflow-y-auto pr-3 -mr-3'>
-          {/* API Configuration - Always visible */}
           <div className='space-y-4'>
             <h3 className='text-sm font-semibold text-foreground'>API Configuration</h3>
             <div className='space-y-2'>
@@ -135,7 +149,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </div>
           </div>
 
-          {/* Server-Side Settings - Conditionally rendered */}
           <>
             {isLoadingSettings && (
               <div className='flex flex-col items-center justify-center gap-2 text-center py-8'>
