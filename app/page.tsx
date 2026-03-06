@@ -1,5 +1,6 @@
 'use client';
 
+import { App, URLOpenListenerEvent } from '@capacitor/app';
 import { AlertTriangle, Plus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
@@ -50,6 +51,31 @@ export default function HomePage() {
   const [torrentToDelete, setTorrentToDelete] = useState<Torrent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [addTorrentDialogOpen, setAddTorrentDialogOpen] = useState(false);
+  const [initialTorrentUrl, setInitialTorrentUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleUrlOpen = (data: URLOpenListenerEvent) => {
+      if (data.url && data.url.startsWith('magnet:')) {
+        setInitialTorrentUrl(data.url);
+        setAddTorrentDialogOpen(true);
+      }
+    };
+
+    // Handle app being opened with a URL
+    App.addListener('appUrlOpen', handleUrlOpen);
+
+    // Check if the app was launched with a URL
+    App.getLaunchUrl().then((data) => {
+      if (data && data.url) {
+        handleUrlOpen(data as URLOpenListenerEvent);
+      }
+    });
+
+    return () => {
+      App.removeAllListeners();
+    };
+  }, []);
 
   const {
     data: torrentsData,
@@ -186,7 +212,16 @@ export default function HomePage() {
       <main className='container mx-auto px-4 py-8'>
         <div className='flex flex-wrap items-center justify-between gap-4 mb-6'>
           <div className='flex flex-wrap items-center gap-4'>
-            <AddTorrentDialog onSuccess={() => mutate()} />
+            <Button onClick={() => setAddTorrentDialogOpen(true)} className='gap-2'>
+              <Plus className='h-4 w-4' />
+              Add Torrent
+            </Button>
+            <AddTorrentDialog
+              open={addTorrentDialogOpen}
+              onOpenChange={setAddTorrentDialogOpen}
+              initialUrl={initialTorrentUrl}
+              onSuccess={() => mutate()}
+            />
 
             <div className='flex items-center gap-2'>
               <Label htmlFor='category-select' className='text-sm text-muted-foreground shrink-0'>
@@ -274,7 +309,7 @@ export default function HomePage() {
                   : 'Get started by adding your first torrent using a magnet link, info hash or torrent file.'}
               </p>
             </div>
-            <AddTorrentDialog onSuccess={() => mutate()} />
+            <Button onClick={() => setAddTorrentDialogOpen(true)}>Add Torrent</Button>
           </div>
         ) : (
           !error &&

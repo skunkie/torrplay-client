@@ -1,7 +1,7 @@
 'use client';
 
-import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { App } from '@capacitor/app';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,18 +19,48 @@ import { addTorrent } from '@/lib/api/torrents';
 import type { TorrentAdd, TorrentAddWithFile } from '@/lib/types/api';
 
 interface AddTorrentDialogProps {
-  onSuccess: () => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+  initialUrl?: string | null;
 }
 
-export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
-  const [open, setOpen] = useState(false);
+export function AddTorrentDialog({ open, onOpenChange, onSuccess, initialUrl }: AddTorrentDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('magnet');
   const [magnet, setMagnet] = useState('');
   const [hash, setHash] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [poster, setPoster] = useState('');
   const [category, setCategory] = useState('');
+
+  useEffect(() => {
+    if (initialUrl) {
+      if (initialUrl.startsWith('magnet:')) {
+        setMagnet(initialUrl);
+        setActiveTab('magnet');
+      }
+    }
+  }, [initialUrl]);
+
+  useEffect(() => {
+    const listenerPromise = App.addListener('appUrlOpen', (data) => {
+      if (data.url.startsWith('magnet:')) {
+        setMagnet(data.url);
+        setActiveTab('magnet');
+        onOpenChange(true);
+      }
+    });
+
+    return () => {
+      const removeListener = async () => {
+        const listener = await listenerPromise;
+        await listener.remove();
+      };
+      void removeListener();
+    };
+  }, [onOpenChange]);
 
   const resetForm = () => {
     setMagnet('');
@@ -42,23 +71,57 @@ export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
     setCategory('');
   };
 
-  const handleMagnetOrHashSubmit = async (useMagnet: boolean) => {
+  const handleOpenChange = (isOpen: boolean) => {
+    onOpenChange(isOpen);
+    if (!isOpen) {
+      resetForm();
+    }
+  };
+
+  const handleSuccess = () => {
+    toast.success('Torrent added', { description: 'The torrent has been added successfully' });
+    onSuccess();
+    handleOpenChange(false);
+  };
+
+  const handleMagnetSubmit = async () => {
+    setLoading(true);
+    try {
+      if (magnet.startsWith('magnet:')) {
+        const data: TorrentAdd = {
+          magnet: magnet,
+          ...(title && { title }),
+          ...(poster && { poster }),
+          ...(category && { category }),
+        };
+        await addTorrent(data);
+      } else {
+        throw new Error('Invalid input. Please provide a magnet link.');
+      }
+      handleSuccess();
+    } catch (error) {
+      toast.error('Error adding torrent', {
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHashSubmit = async () => {
     setLoading(true);
     try {
       const data: TorrentAdd = {
-        ...(useMagnet ? { magnet } : { hash }),
+        hash,
         ...(title && { title }),
         ...(poster && { poster }),
         ...(category && { category }),
       };
       await addTorrent(data);
-      toast.success('Torrent added', { description: 'The torrent has been added successfully' });
-      setOpen(false);
-      resetForm();
-      onSuccess();
+      handleSuccess();
     } catch (error) {
-      toast.error('Error', {
-        description: error instanceof Error ? error.message : 'Failed to add torrent',
+      toast.error('Error adding torrent', {
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
       });
     } finally {
       setLoading(false);
@@ -75,13 +138,10 @@ export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
         ...(poster && { poster }),
       };
       await addTorrent(data);
-      toast.success('Torrent added', { description: 'The torrent has been added successfully' });
-      setOpen(false);
-      resetForm();
-      onSuccess();
+      handleSuccess();
     } catch (error) {
-      toast.error('Error', {
-        description: error instanceof Error ? error.message : 'Failed to add torrent',
+      toast.error('Error adding torrent', {
+        description: error instanceof Error ? error.message : 'An unknown error occurred',
       });
     } finally {
       setLoading(false);
@@ -89,28 +149,14 @@ export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen);
-        if (!isOpen) {
-          resetForm();
-        }
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button className='gap-2'>
-          <Plus className='h-4 w-4' />
-          Add Torrent
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className='sm:max-w-[500px]'>
         <DialogHeader>
           <DialogTitle>Add New Torrent</DialogTitle>
           <DialogDescription>Add a torrent using a magnet, info hash, or torrent file</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue='magnet' className='w-full'>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className='w-full'>
           <TabsList className='grid w-full grid-cols-3'>
             <TabsTrigger value='magnet'>Magnet</TabsTrigger>
             <TabsTrigger value='hash'>Info Hash</TabsTrigger>
@@ -158,7 +204,7 @@ export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
               />
             </div>
 
-            <Button onClick={() => handleMagnetOrHashSubmit(true)} disabled={!magnet || loading} className='w-full'>
+            <Button onClick={handleMagnetSubmit} disabled={!magnet || loading} className='w-full'>
               {loading ? 'Adding...' : 'Add Torrent'}
             </Button>
           </TabsContent>
@@ -204,7 +250,7 @@ export function AddTorrentDialog({ onSuccess }: AddTorrentDialogProps) {
               />
             </div>
 
-            <Button onClick={() => handleMagnetOrHashSubmit(false)} disabled={!hash || loading} className='w-full'>
+            <Button onClick={handleHashSubmit} disabled={!hash || loading} className='w-full'>
               {loading ? 'Adding...' : 'Add Torrent'}
             </Button>
           </TabsContent>
