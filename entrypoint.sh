@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 npx cap telemetry off
 # npx cap add android
