@@ -1,8 +1,6 @@
 import camelcaseKeys from 'camelcase-keys';
 import snakecaseKeys from 'snakecase-keys';
 
-import { API_BASE_URL } from '@/lib/constants';
-
 // -- Custom Error --
 
 export class HttpError extends Error {
@@ -21,10 +19,15 @@ export class HttpError extends Error {
 
 export function getApiBaseUrl(): string | null {
   if (typeof window !== 'undefined') {
+    // Manual override from local storage
     const fromStorage = localStorage.getItem('NEXT_PUBLIC_API_URL');
-    if (fromStorage) return fromStorage;
+    if (fromStorage) {
+      return fromStorage;
+    }
+    // Dynamically construct URL from the current host
+    return `http://${window.location.hostname}:8090`;
   }
-  return API_BASE_URL || null;
+  return process.env.NEXT_PUBLIC_API_URL || null;
 }
 
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {

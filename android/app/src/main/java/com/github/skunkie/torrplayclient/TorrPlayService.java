@@ -6,18 +6,23 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.Network;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
+import java.util.List;
 import torrplay.App;
 import torrplay.Torrplay;
 
 public class TorrPlayService extends Service {
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "torrplay_channel";
+    private static final int TORRPLAY_PORT = 8090;
 
     private App torrplayApp;
     private WifiManager.MulticastLock multicastLock;
@@ -29,24 +34,25 @@ public class TorrPlayService extends Service {
         Log.i("TorrPlayService", "Service onCreate");
         createNotificationChannel();
 
-        // Initialize the Go application
         try {
             String dataDir = getFilesDir().getAbsolutePath();
-            Log.i("TorrPlayService", "Initializing TorrPlay with data directory: " + dataDir);
-            torrplayApp = Torrplay.new_(dataDir);
+            String ipAddress = getIPAddress();
+            if (ipAddress == null) {
+                throw new Exception("Could not get a valid IP address");
+            }
+            Log.i("TorrPlayService", "Initializing TorrPlay with data dir: " + dataDir + ", IP: " + ipAddress + ", Port: " + TORRPLAY_PORT);
+            torrplayApp = Torrplay.new_(dataDir, ipAddress, TORRPLAY_PORT);
         } catch (Exception e) {
             Log.e("TorrPlayService", "Failed to initialize TorrPlay app", e);
-            torrplayApp = null; // Ensure app is null on failure
+            torrplayApp = null;
         }
 
-        // Acquire a WakeLock to keep the CPU running
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TorrPlayClient::WakeLock");
             wakeLock.acquire();
         }
 
-        // Acquire a MulticastLock to allow the device to receive multicast packets
         WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         if (wifi != null) {
             multicastLock = wifi.createMulticastLock("multicastLock");
@@ -67,16 +73,13 @@ public class TorrPlayService extends Service {
 
         startForeground(NOTIFICATION_ID, getNotification());
 
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Log.i("TorrPlayService", "Starting TorrPlay app");
-                    torrplayApp.start(); // This is a blocking call
-                    Log.i("TorrPlayService", "TorrPlay app has stopped.");
-                } catch (Exception e) {
-                    Log.e("TorrPlayService", "TorrPlay app crashed", e);
-                }
+        new Thread(() -> {
+            try {
+                Log.i("TorrPlayService", "Starting TorrPlay app");
+                torrplayApp.start();
+                Log.i("TorrPlayService", "TorrPlay app has stopped.");
+            } catch (Exception e) {
+                Log.e("TorrPlayService", "TorrPlay app crashed", e);
             }
         }).start();
 
@@ -88,7 +91,6 @@ public class TorrPlayService extends Service {
         super.onDestroy();
         Log.e("TorrPlayService", "Service onDestroy. The service is being killed! Stopping app and scheduling restart...");
 
-        // Stop the Go application
         if (torrplayApp != null) {
             try {
                 torrplayApp.stop();
@@ -98,7 +100,6 @@ public class TorrPlayService extends Service {
             }
         }
 
-        // Release the locks
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             wakeLock = null;
@@ -108,7 +109,6 @@ public class TorrPlayService extends Service {
             multicastLock = null;
         }
 
-        // Send a broadcast to the Restarter
         Intent broadcastIntent = new Intent(this, Restarter.class);
         broadcastIntent.setAction(Restarter.ACTION_RESTART_SERVICE);
         this.sendBroadcast(broadcastIntent);
@@ -116,17 +116,59 @@ public class TorrPlayService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) {
-        return null; // Not a bound service
+        return null;
+    }
+
+    private String getIPAddress() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) {
+            return null;
+        }
+        Network activeNetwork = cm.getActiveNetwork();
+        if (activeNetwork == null) {
+            return null;
+        }
+
+        List<LinkAddress> linkAddresses = cm.getLinkProperties(activeNetwork).getLinkAddresses();
+        String ipv6Address = null;
+
+        for (LinkAddress linkAddress : linkAddresses) {
+            java.net.InetAddress inetAddress = linkAddress.getAddress();
+
+            if (inetAddress.isLoopbackAddress() || inetAddress.isLinkLocalAddress()) {
+                continue;
+            }
+
+            String hostAddress = inetAddress.getHostAddress();
+            boolean isIPv4 = hostAddress.indexOf(':') < 0;
+
+            // We prefer IPv4 for compatibility. Return it as soon as we find a valid one.
+            if (isIPv4) {
+                return hostAddress;
+            }
+
+            // If it's an IPv6 address, store the first valid one we find.
+            if (ipv6Address == null) {
+                // For IPv6, it's important to remove the scope ID (e.g., %eth0).
+                int zoneIndex = hostAddress.indexOf('%');
+                if (zoneIndex > 0) {
+                    ipv6Address = hostAddress.substring(0, zoneIndex);
+                } else {
+                    ipv6Address = hostAddress;
+                }
+            }
+        }
+
+        return ipv6Address;
     }
 
     private Notification getNotification() {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Torrplay Service")
                 .setContentText("Running in background")
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setPriority(NotificationCompat.PRIORITY_LOW);
-
-        return builder.build();
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
     }
 
     private void createNotificationChannel() {
