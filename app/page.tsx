@@ -209,7 +209,7 @@ export default function HomePage() {
         onPauseClick={() => setIsPaused(!isPaused)}
       />
 
-      <main className='container mx-auto px-4 py-8'>
+      <main className='container mx-auto px-4 py-8 max-w-screen-tv'>
         <div className='flex flex-wrap items-center justify-between gap-4 mb-6'>
           <div className='flex flex-wrap items-center gap-4'>
             <Button onClick={() => setAddTorrentDialogOpen(true)} className='gap-2'>
@@ -228,7 +228,7 @@ export default function HomePage() {
                 Category:
               </Label>
               <Select value={categoryFilter} onValueChange={handleCategoryFilterChange}>
-                <SelectTrigger id='category-select' className='w-full sm:w-[240px]'>
+                <SelectTrigger id='category-select' className='w-full sm:w-[240px] xl:w-[300px] 3xl:w-[360px]'>
                   <SelectValue placeholder='Filter by category...' />
                 </SelectTrigger>
                 <SelectContent>
@@ -247,7 +247,7 @@ export default function HomePage() {
                 Sort by:
               </Label>
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger id='sort-select' className='w-full sm:w-[180px]'>
+                <SelectTrigger id='sort-select' className='w-full sm:w-[180px] xl:w-[240px] 3xl:w-[300px]'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -314,7 +314,7 @@ export default function HomePage() {
         ) : (
           !error &&
           !isLoading && (
-            <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+            <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 3xl:grid-cols-5 tv:grid-cols-6'>
               {paginatedTorrents.map((torrent) => (
                 <TorrentCard
                   key={torrent.hash}

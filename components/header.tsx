@@ -1,6 +1,6 @@
 'use client';
 
-import { Ban,BarChart3, RefreshCw, Search, Settings } from 'lucide-react';
+import { Ban, BarChart3, RefreshCw, Search, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -15,25 +15,31 @@ import {
 import { getSystemInfo } from '@/lib/api/system';
 
 interface HeaderProps {
-  onSettingsClick: () => void
-  onMetricsClick: () => void
-  onTitleSearch: (query: string) => void
-  isPaused: boolean
-  onPauseClick: () => void
+  onSettingsClick: () => void;
+  onMetricsClick: () => void;
+  onTitleSearch: (query: string) => void;
+  isPaused: boolean;
+  onPauseClick: () => void;
 }
 
-export function Header({ onSettingsClick, onMetricsClick, onTitleSearch, isPaused, onPauseClick }: HeaderProps) {
+export function Header({
+  onSettingsClick,
+  onMetricsClick,
+  onTitleSearch,
+  isPaused,
+  onPauseClick,
+}: HeaderProps) {
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     getSystemInfo()
-      .then(info => setVersion(info.version))
+      .then((info) => setVersion(info.version))
       .catch(() => setVersion(null));
   }, []);
 
   return (
     <header className='border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50'>
-      <div className='container mx-auto px-4 py-4 space-y-4'>
+      <div className='container mx-auto px-4 py-4 space-y-4 max-w-screen-tv'>
         <div className='flex items-center justify-between gap-4'>
           <div className='flex items-center gap-10'>
             <Link href='/' className='flex items-center gap-2'>

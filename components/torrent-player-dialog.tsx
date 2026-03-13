@@ -35,8 +35,7 @@ export const TorrentPlayerDialog = ({ torrent, open, onOpenChange }: TorrentPlay
   useEffect(() => {
     if (open && torrent) {
       const files = torrent.files
-        .filter((f) => VIDEO_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext)))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        .filter((f) => VIDEO_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext)));
 
       setVideoFiles(files);
 

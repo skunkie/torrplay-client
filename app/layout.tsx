@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     ],
     apple: '/icon-512x512.png',
   },
-  generator: 'Next.js'
+  viewport: 'user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, viewport-fit=cover',
 };
 
 export default function RootLayout({

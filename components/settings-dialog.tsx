@@ -92,7 +92,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <DialogContent className='sm:max-w-[500px]'>
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Configure your TorrPlay server and application settings</DialogDescription>
+          <DialogDescription>Configure application settings</DialogDescription>
         </DialogHeader>
 
         <div className='grid gap-y-6 py-4 max-h-[60vh] overflow-y-auto pr-3 -mr-3'>
